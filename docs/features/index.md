@@ -4,7 +4,7 @@ Read the relevant recipe before adding dependencies. **Implemented** means prese
 
 | Capability | Status / verification | Recommended approach | Prerequisites / recipe |
 | --- | --- | --- | --- |
-| HTTP, validation, JSON errors, OpenAPI | Implemented; field-error aggregation and runtime/contract tests | Axum, utoipa, problem details with field messages | [HTTP](../http.md) |
+| HTTP, validation, JSON errors, OpenAPI | Implemented; issue aggregation, typed paths and runtime/contract tests | Axum, utoipa, problem details with Zod-style issues | [HTTP](../http.md) |
 | PostgreSQL pool, versioned migrations, transactions | Implemented; pool/migrations/transaction composition tested | SeaORM concrete feature logic | [Database](../database.md), [data](data.md) |
 | Logs, request IDs, health, readiness, shutdown, limits | Implemented; core and container checks | JSON tracing, explicit deadlines | [HTTP](../http.md), [operations](../operations.md) |
 | Authentication, sessions/tokens, authorization | Recipe; documentation only | OIDC code + PKCE and PostgreSQL sessions for browser apps | Client model/issuer decision; [identity](identity.md) |

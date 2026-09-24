@@ -255,6 +255,16 @@
           }
         }
       },
+      "IssueCode": {
+        "type": "string",
+        "enum": [
+          "invalid_type",
+          "too_small",
+          "too_big",
+          "unrecognized_keys",
+          "custom"
+        ]
+      },
       "Note": {
         "type": "object",
         "required": [
@@ -271,6 +281,17 @@
           }
         }
       },
+      "PathSegment": {
+        "oneOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer",
+            "minimum": 0
+          }
+        ]
+      },
       "Problem": {
         "type": "object",
         "required": [
@@ -284,18 +305,12 @@
           "detail": {
             "type": "string"
           },
-          "errors": {
-            "type": "object",
-            "description": "Validation messages keyed by field; `_root` identifies request-wide errors.",
-            "additionalProperties": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ValidationIssue"
             },
-            "propertyNames": {
-              "type": "string"
-            }
+            "description": "Structured validation issues; an empty path identifies the whole request."
           },
           "request_id": {
             "type": "string",
@@ -311,6 +326,28 @@
           },
           "type": {
             "type": "string"
+          }
+        }
+      },
+      "ValidationIssue": {
+        "type": "object",
+        "required": [
+          "code",
+          "path",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/IssueCode"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PathSegment"
+            }
           }
         }
       }

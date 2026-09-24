@@ -1,7 +1,7 @@
 pub mod entity;
 use crate::{
     AppState,
-    error::{AppError, ValidationErrors},
+    error::{AppError, IssueCode, ValidationErrors},
 };
 use axum::{
     Json,
@@ -42,7 +42,11 @@ impl NoteInput {
     fn validate(self) -> Result<CreateNote, AppError> {
         let mut errors = ValidationErrors::default();
         if !self.unknown.is_empty() {
-            errors.add("_root", "Unknown fields are not allowed.");
+            errors.add(
+                [],
+                IssueCode::UnrecognizedKeys,
+                "Unknown fields are not allowed.",
+            );
         }
         let title = match self.title {
             Value::String(title) => match validate_title(&title) {
@@ -53,11 +57,19 @@ impl NoteInput {
                 }
             },
             Value::Null => {
-                errors.add("title", "The title field is required.");
+                errors.add(
+                    ["title".into()],
+                    IssueCode::InvalidType,
+                    "The title field is required.",
+                );
                 String::new()
             }
             _ => {
-                errors.add("title", "The title must be a string.");
+                errors.add(
+                    ["title".into()],
+                    IssueCode::InvalidType,
+                    "The title must be a string.",
+                );
                 String::new()
             }
         };
@@ -68,16 +80,19 @@ impl NoteInput {
 
 pub fn validate_title(title: &str) -> Result<String, ValidationErrors> {
     let title = title.trim();
-    let message = if title.is_empty() {
-        Some("The title field is required.")
+    let issue = if title.is_empty() {
+        Some((IssueCode::TooSmall, "The title field is required."))
     } else if title.chars().count() > 200 {
-        Some("The title must not be greater than 200 characters.")
+        Some((
+            IssueCode::TooBig,
+            "The title must not be greater than 200 characters.",
+        ))
     } else {
         None
     };
-    if let Some(message) = message {
+    if let Some((code, message)) = issue {
         let mut errors = ValidationErrors::default();
-        errors.add("title", message);
+        errors.add(["title".into()], code, message);
         return Err(errors);
     }
     Ok(title.into())
@@ -113,7 +128,11 @@ pub async fn create(
     let Json(input) = input.map_err(|error| match error {
         JsonRejection::JsonDataError(_) => {
             let mut errors = ValidationErrors::default();
-            errors.add("_root", "Expected an object with no duplicate fields.");
+            errors.add(
+                [],
+                IssueCode::Custom,
+                "Expected an object with no duplicate fields.",
+            );
             AppError::from(errors)
         }
         _ => AppError::new(error.status(), "Invalid JSON request"),

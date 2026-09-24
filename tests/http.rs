@@ -45,7 +45,7 @@ async fn request(
         );
         assert!(!value.to_string().contains("untrusted-secret"));
         if status != StatusCode::UNPROCESSABLE_ENTITY {
-            assert!(value.get("errors").is_none());
+            assert!(value.get("issues").is_none());
         }
     }
     (status, headers, value)
@@ -173,65 +173,66 @@ async fn postgres_http_contract_and_migration_lifecycle() {
     assert_eq!(status, 200);
     assert_eq!(legacy_note["id"], legacy_id.to_string());
     assert_eq!(legacy_note["title"], "existing v4 note");
-    for (body, expected_errors) in [
+    for (body, expected_issues) in [
         (
             "{}".to_owned(),
-            json!({"title": ["The title field is required."]}),
+            json!([{"code": "invalid_type", "path": ["title"], "message": "The title field is required."}]),
         ),
         (
             r#"{"title":null}"#.to_owned(),
-            json!({"title": ["The title field is required."]}),
+            json!([{"code": "invalid_type", "path": ["title"], "message": "The title field is required."}]),
         ),
         (
             r#"{"title":" \n "}"#.to_owned(),
-            json!({"title": ["The title field is required."]}),
+            json!([{"code": "too_small", "path": ["title"], "message": "The title field is required."}]),
         ),
         (
             r#"{"title":12}"#.to_owned(),
-            json!({"title": ["The title must be a string."]}),
+            json!([{"code": "invalid_type", "path": ["title"], "message": "The title must be a string."}]),
         ),
         (
             r#"{"title":false}"#.to_owned(),
-            json!({"title": ["The title must be a string."]}),
+            json!([{"code": "invalid_type", "path": ["title"], "message": "The title must be a string."}]),
         ),
         (
             r#"{"title":[]}"#.to_owned(),
-            json!({"title": ["The title must be a string."]}),
+            json!([{"code": "invalid_type", "path": ["title"], "message": "The title must be a string."}]),
         ),
         (
             r#"{"title":{"secret":"sensitive-input"}}"#.to_owned(),
-            json!({"title": ["The title must be a string."]}),
+            json!([{"code": "invalid_type", "path": ["title"], "message": "The title must be a string."}]),
         ),
         (
             json!({"title": "é".repeat(201)}).to_string(),
-            json!({"title": ["The title must not be greater than 200 characters."]}),
+            json!([{"code": "too_big", "path": ["title"], "message": "The title must not be greater than 200 characters."}]),
         ),
         (
             r#"{"title":"", "sensitive-input":"secret"}"#.to_owned(),
-            json!({"title": ["The title field is required."], "_root": ["Unknown fields are not allowed."]}),
+            json!([{"code": "unrecognized_keys", "path": [], "message": "Unknown fields are not allowed."}, {"code": "too_small", "path": ["title"], "message": "The title field is required."}]),
         ),
         (
             r#"{"title":"ok", "sensitive-input":"secret"}"#.to_owned(),
-            json!({"_root": ["Unknown fields are not allowed."]}),
+            json!([{"code": "unrecognized_keys", "path": [], "message": "Unknown fields are not allowed."}]),
         ),
         (
             r#"{"title":"first","title":"second"}"#.to_owned(),
-            json!({"_root": ["Expected an object with no duplicate fields."]}),
+            json!([{"code": "custom", "path": [], "message": "Expected an object with no duplicate fields."}]),
         ),
         (
             "[]".to_owned(),
-            json!({"_root": ["Expected an object with no duplicate fields."]}),
+            json!([{"code": "custom", "path": [], "message": "Expected an object with no duplicate fields."}]),
         ),
         (
             "null".to_owned(),
-            json!({"_root": ["Expected an object with no duplicate fields."]}),
+            json!([{"code": "custom", "path": [], "message": "Expected an object with no duplicate fields."}]),
         ),
     ] {
         let (status, _, problem) =
             request(&router, "POST", "/example/notes", &body, "application/json").await;
         assert_eq!(status, 422, "body: {body}");
         assert_eq!(problem["detail"], "The given data was invalid.");
-        assert_eq!(problem["errors"], expected_errors, "body: {body}");
+        assert_eq!(problem["issues"], expected_issues, "body: {body}");
+        assert!(problem.get("errors").is_none());
         assert!(!problem.to_string().contains("sensitive-input"));
     }
     use sea_orm::PaginatorTrait;
@@ -329,9 +330,16 @@ async fn postgres_http_contract_and_migration_lifecycle() {
     );
     let spec: Value = serde_json::from_str(include_str!("../docs/openapi.json")).unwrap();
     assert_eq!(
-        spec["components"]["schemas"]["Problem"]["properties"]["errors"]["additionalProperties"]["items"]
-            ["type"],
+        spec["components"]["schemas"]["Problem"]["properties"]["issues"]["items"]["$ref"],
+        "#/components/schemas/ValidationIssue"
+    );
+    assert_eq!(
+        spec["components"]["schemas"]["PathSegment"]["oneOf"][0]["type"],
         "string"
+    );
+    assert_eq!(
+        spec["components"]["schemas"]["PathSegment"]["oneOf"][1]["type"],
+        "integer"
     );
     assert_eq!(
         spec["paths"]["/example/notes"]["post"]["responses"]["201"]["content"]["application/json"]

@@ -6,7 +6,7 @@ All application errors, including route/method fallbacks, body limits, JSON/path
 
 Return `AppError` for deliberate public error details. Its `IntoResponse` attaches typed metadata; `request_context` calls `error::normalize` to render the problem once the request ID is known. Mount routes through `app` so this middleware always runs. Other error responses receive the generic detail `Request failed`; their bodies are never inspected or exposed. Normalization preserves response headers such as CORS, cookies, Allow, Retry-After and WWW-Authenticate, while replacing stale body metadata. Avoid serializing provider errors into client responses.
 
-Validation failures return HTTP 422 with an `errors` map inspired by [Laravel's validation responses](https://laravel.com/docs/13.x/validation#validation-error-response-format). Each field maps to an array of safe, human-readable messages, so clients can render `problem.errors.title` beside the title input. The existing problem fields and request ID remain present. For example, posting `{"title":" "}` returns:
+Validation failures return HTTP 422 with an `issues` array inspired by [Zod's structured errors](https://zod.dev/error-customization). Every issue has a stable `code`, a `path` array, and an application-authored `message`. The existing problem fields and request ID remain present. For example, posting `{"title":" "}` returns:
 
 ```json
 {
@@ -15,13 +15,24 @@ Validation failures return HTTP 422 with an `errors` map inspired by [Laravel's 
   "status": 422,
   "detail": "The given data was invalid.",
   "request_id": "01998c9e-8000-7000-8000-000000000001",
-  "errors": { "title": ["The title field is required."] }
+  "issues": [
+    { "code": "too_small", "path": ["title"], "message": "The title field is required." }
+  ]
 }
 ```
 
-Use `ValidationErrors::add(field, message)` to collect failures and `finish()?` after evaluating the fields. Multiple messages per field and multiple failing fields are supported; nested features can use dotted keys such as `items.0.name`. `_root` is reserved for request-wide failures. Keep messages application-authored: never include submitted values, arbitrary unknown field names, or raw deserializer/database errors. `AppError::new(status, detail)` handles non-validation failures, which omit `errors`.
+Use `ValidationErrors::add(path, code, message)` to collect failures and `finish()?` after evaluating the fields. Multiple issues for a field and multiple failing fields are supported, in insertion order. Paths contain string field names and integer array indexes: `["items", 0, "name"]`. An empty path `[]` identifies the whole request. String keys containing dots or numeric strings remain literal keys. For example:
 
-`NoteInput` is the HTTP decoding form; it collects missing/null title, wrong type, trimmed-empty/overlong title and unknown-field failures before constructing the typed `CreateNote`. A title error and unknown fields are reported together. Unknown fields use a fixed `_root` message; non-object input and duplicate known fields also use `_root`. `create_note` still validates typed input for callers outside HTTP. Malformed JSON remains 400, unsupported content type 415, and an oversized body 413. This is field-level error reporting without an additional validation dependency; it does not implement a declarative rule language or automatic nested validation.
+```rust
+errors.add(["items".into(), 0usize.into(), "name".into()], IssueCode::TooSmall, "Name is required.");
+errors.finish()?;
+```
+
+The supported codes are `invalid_type` (including missing/null required values), `too_small`, `too_big`, `unrecognized_keys`, and `custom`. Clients should use codes and paths for behavior and messages for display. Keep messages application-authored: never include submitted values, arbitrary unknown field names, or raw deserializer/database errors. `AppError::new(status, detail)` handles non-validation failures, which omit `issues`.
+
+`NoteInput` is the HTTP decoding form; it collects missing/null title, wrong type, trimmed-empty/overlong title and unknown-field failures before constructing the typed `CreateNote`. A title error and unknown fields are reported together. Unknown fields use `unrecognized_keys` at `[]`; non-object input and duplicate known fields share a safe `custom` issue at `[]`. `create_note` still validates typed input for callers outside HTTP. Malformed JSON remains 400, unsupported content type 415, and an oversized body 413.
+
+This replaces the earlier Laravel-style `errors` map: consumers must read `issues`. It implements Zod-style issue reporting without an additional dependency, not the complete Zod schema API or issue metadata (such as `expected`, `minimum` or submitted key names). Nested paths are supported by the error format; nested validation rules still belong to each feature.
 
 Every request gets a new server-generated UUID v7. The middleware ignores inbound correlation IDs to prevent untrusted strings entering logs. Structured JSON logs contain only matched route template, generated request ID, status, and duration. Neither raw URL/query nor headers nor bodies are logged. SQL logging is off. Never log `Config`, database errors, auth tokens, or provider response bodies. Add stable error categories and a correlation ID when diagnosing failures. Unknown route logs say `unmatched`.
 

@@ -12,7 +12,7 @@ The following commands were executed from the repository with `CARGO_TARGET_DIR=
 | `cargo check --all-targets` | Passed during initial implementation |
 | `cargo fmt --all -- --check` | Passed via shared check script |
 | `cargo clippy --locked --all-targets -- -D warnings` | Passed |
-| `cargo test --locked --all-targets` | Passed: 3 unit tests + 3 HTTP/PostgreSQL scenario tests; no ignored tests |
+| `cargo test --locked --all-targets` | Passed: 4 unit tests + 3 HTTP/PostgreSQL scenario tests; no ignored tests |
 | `bash scripts/openapi.sh write` then `bash scripts/openapi.sh check` | Generated checked-in spec; drift check passed |
 | `cargo deny --locked check` | Advisories, bans, licenses, sources passed; transitive duplicate-version warnings remain intentionally visible |
 | `cargo build --locked --release --bin rust-starterkit` | Passed |
@@ -32,6 +32,8 @@ Passed in the copy: Clippy for all trial targets, both email tests (HTML escapin
 The email recipe records the additional template Docker context/copy steps needed on adoption. Authentication, jobs, scheduling, uploads, caching, metrics, realtime, backup/restore and provider integrations remain documentation-only guidance; they were not compiled or executed merely because email succeeded.
 
 ## Corrections and remaining limits
+
+Zod-style validation update on 2026-09-25: replaced the `errors` map with ordered `issues`, each containing a typed code, a path of string fields/integer indexes, and a safe message. HTTP cases assert the new codes, root paths and absence of the old map; a new normalization test verifies nested/indexed paths, literal dotted/numeric keys, multiple issues for one field and merge order. Regenerated OpenAPI with the code enum and path union. All seven tests and the complete `scripts/check.sh` and `scripts/container-smoke.sh` passed. An initial test assumed `anyOf`; it was corrected to the generated `oneOf` schema before the successful run. No dependencies or database migrations changed.
 
 Field-validation update on 2026-09-25: added Laravel-style field-to-message arrays to HTTP 422 problem responses and a reusable `ValidationErrors` collector. HTTP/PostgreSQL checks cover missing/null/blank/wrong-type/overlong title, unknown fields together with a title error, duplicate title, non-object input, redaction of submitted data, and no inserts for rejected requests. Non-validation failures omit `errors`. Regenerated OpenAPI and verified its field-message schema. All six tests and the full `scripts/check.sh` and `scripts/container-smoke.sh` passed; no dependencies or database migrations were added.
 
