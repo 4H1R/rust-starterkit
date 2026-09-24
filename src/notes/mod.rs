@@ -1,5 +1,8 @@
 pub mod entity;
-use crate::{AppState, error::AppError};
+use crate::{
+    AppState,
+    error::{AppError, ValidationErrors},
+};
 use axum::{
     Json,
     extract::{
@@ -10,6 +13,8 @@ use axum::{
 };
 use sea_orm::{ActiveModelTrait, ConnectionTrait, EntityTrait, Set};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::collections::BTreeMap;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -25,13 +30,55 @@ pub struct Note {
     pub title: String,
 }
 
-pub fn validate_title(title: &str) -> Result<String, AppError> {
+#[derive(Deserialize)]
+pub struct NoteInput {
+    #[serde(default)]
+    title: Value,
+    #[serde(flatten)]
+    unknown: BTreeMap<String, serde::de::IgnoredAny>,
+}
+
+impl NoteInput {
+    fn validate(self) -> Result<CreateNote, AppError> {
+        let mut errors = ValidationErrors::default();
+        if !self.unknown.is_empty() {
+            errors.add("_root", "Unknown fields are not allowed.");
+        }
+        let title = match self.title {
+            Value::String(title) => match validate_title(&title) {
+                Ok(title) => title,
+                Err(title_errors) => {
+                    errors.merge(title_errors);
+                    String::new()
+                }
+            },
+            Value::Null => {
+                errors.add("title", "The title field is required.");
+                String::new()
+            }
+            _ => {
+                errors.add("title", "The title must be a string.");
+                String::new()
+            }
+        };
+        errors.finish()?;
+        Ok(CreateNote { title })
+    }
+}
+
+pub fn validate_title(title: &str) -> Result<String, ValidationErrors> {
     let title = title.trim();
-    if title.is_empty() || title.chars().count() > 200 {
-        return Err(AppError(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "title must contain 1 to 200 characters after trimming",
-        ));
+    let message = if title.is_empty() {
+        Some("The title field is required.")
+    } else if title.chars().count() > 200 {
+        Some("The title must not be greater than 200 characters.")
+    } else {
+        None
+    };
+    if let Some(message) = message {
+        let mut errors = ValidationErrors::default();
+        errors.add("title", message);
+        return Err(errors);
     }
     Ok(title.into())
 }
@@ -61,9 +108,17 @@ pub async fn create_note(db: &impl ConnectionTrait, input: CreateNote) -> Result
 ))]
 pub async fn create(
     State(state): State<AppState>,
-    input: Result<Json<CreateNote>, JsonRejection>,
+    input: Result<Json<NoteInput>, JsonRejection>,
 ) -> Result<(StatusCode, Json<Note>), AppError> {
-    let Json(input) = input.map_err(|e| AppError(e.status(), "Invalid JSON request"))?;
+    let Json(input) = input.map_err(|error| match error {
+        JsonRejection::JsonDataError(_) => {
+            let mut errors = ValidationErrors::default();
+            errors.add("_root", "Expected an object with no duplicate fields.");
+            AppError::from(errors)
+        }
+        _ => AppError::new(error.status(), "Invalid JSON request"),
+    })?;
+    let input = input.validate()?;
     Ok((
         StatusCode::CREATED,
         Json(create_note(&state.db, input).await?),
@@ -81,11 +136,11 @@ pub async fn get(
     State(state): State<AppState>,
     id: Result<Path<Uuid>, PathRejection>,
 ) -> Result<Json<Note>, AppError> {
-    let Path(id) = id.map_err(|_| AppError(StatusCode::BAD_REQUEST, "id must be a UUID"))?;
+    let Path(id) = id.map_err(|_| AppError::new(StatusCode::BAD_REQUEST, "id must be a UUID"))?;
     let model = entity::Entity::find_by_id(id)
         .one(&state.db)
         .await?
-        .ok_or(AppError(StatusCode::NOT_FOUND, "Note not found"))?;
+        .ok_or(AppError::new(StatusCode::NOT_FOUND, "Note not found"))?;
     Ok(Json(Note {
         id: model.id,
         title: model.title,

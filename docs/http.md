@@ -6,6 +6,23 @@ All application errors, including route/method fallbacks, body limits, JSON/path
 
 Return `AppError` for deliberate public error details. Its `IntoResponse` attaches typed metadata; `request_context` calls `error::normalize` to render the problem once the request ID is known. Mount routes through `app` so this middleware always runs. Other error responses receive the generic detail `Request failed`; their bodies are never inspected or exposed. Normalization preserves response headers such as CORS, cookies, Allow, Retry-After and WWW-Authenticate, while replacing stale body metadata. Avoid serializing provider errors into client responses.
 
+Validation failures return HTTP 422 with an `errors` map inspired by [Laravel's validation responses](https://laravel.com/docs/13.x/validation#validation-error-response-format). Each field maps to an array of safe, human-readable messages, so clients can render `problem.errors.title` beside the title input. The existing problem fields and request ID remain present. For example, posting `{"title":" "}` returns:
+
+```json
+{
+  "type": "about:blank",
+  "title": "Unprocessable Entity",
+  "status": 422,
+  "detail": "The given data was invalid.",
+  "request_id": "01998c9e-8000-7000-8000-000000000001",
+  "errors": { "title": ["The title field is required."] }
+}
+```
+
+Use `ValidationErrors::add(field, message)` to collect failures and `finish()?` after evaluating the fields. Multiple messages per field and multiple failing fields are supported; nested features can use dotted keys such as `items.0.name`. `_root` is reserved for request-wide failures. Keep messages application-authored: never include submitted values, arbitrary unknown field names, or raw deserializer/database errors. `AppError::new(status, detail)` handles non-validation failures, which omit `errors`.
+
+`NoteInput` is the HTTP decoding form; it collects missing/null title, wrong type, trimmed-empty/overlong title and unknown-field failures before constructing the typed `CreateNote`. A title error and unknown fields are reported together. Unknown fields use a fixed `_root` message; non-object input and duplicate known fields also use `_root`. `create_note` still validates typed input for callers outside HTTP. Malformed JSON remains 400, unsupported content type 415, and an oversized body 413. This is field-level error reporting without an additional validation dependency; it does not implement a declarative rule language or automatic nested validation.
+
 Every request gets a new server-generated UUID v7. The middleware ignores inbound correlation IDs to prevent untrusted strings entering logs. Structured JSON logs contain only matched route template, generated request ID, status, and duration. Neither raw URL/query nor headers nor bodies are logged. SQL logging is off. Never log `Config`, database errors, auth tokens, or provider response bodies. Add stable error categories and a correlation ID when diagnosing failures. Unknown route logs say `unmatched`.
 
 Defaults: 16 KiB JSON body, 10-second handler/body-read deadline, database pool acquisition/connect 3 seconds, readiness query 2 seconds. Config bounds are enforced by `Config::from_lookup`. The current body limit covers JSON extractors; when adding raw-body/multipart routes install an explicit streaming byte limit too. Handler timeouts cancel the Rust future, but a database write may already have committed: clients must not blindly retry writes. Add idempotency keys when retryable create APIs are required. No outbound HTTP client exists by default; follow [outbound HTTP](features/communication.md) when adding one. Reverse proxies must enforce connection, header-read, idle, and request-count limits before public exposure.

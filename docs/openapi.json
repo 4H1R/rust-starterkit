@@ -284,6 +284,19 @@
           "detail": {
             "type": "string"
           },
+          "errors": {
+            "type": "object",
+            "description": "Validation messages keyed by field; `_root` identifies request-wide errors.",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
           "request_id": {
             "type": "string",
             "description": "Server-generated correlation ID, also returned in X-Request-ID."

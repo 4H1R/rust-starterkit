@@ -44,6 +44,9 @@ async fn request(
             headers["x-request-id"].to_str().unwrap()
         );
         assert!(!value.to_string().contains("untrusted-secret"));
+        if status != StatusCode::UNPROCESSABLE_ENTITY {
+            assert!(value.get("errors").is_none());
+        }
     }
     (status, headers, value)
 }
@@ -170,6 +173,75 @@ async fn postgres_http_contract_and_migration_lifecycle() {
     assert_eq!(status, 200);
     assert_eq!(legacy_note["id"], legacy_id.to_string());
     assert_eq!(legacy_note["title"], "existing v4 note");
+    for (body, expected_errors) in [
+        (
+            "{}".to_owned(),
+            json!({"title": ["The title field is required."]}),
+        ),
+        (
+            r#"{"title":null}"#.to_owned(),
+            json!({"title": ["The title field is required."]}),
+        ),
+        (
+            r#"{"title":" \n "}"#.to_owned(),
+            json!({"title": ["The title field is required."]}),
+        ),
+        (
+            r#"{"title":12}"#.to_owned(),
+            json!({"title": ["The title must be a string."]}),
+        ),
+        (
+            r#"{"title":false}"#.to_owned(),
+            json!({"title": ["The title must be a string."]}),
+        ),
+        (
+            r#"{"title":[]}"#.to_owned(),
+            json!({"title": ["The title must be a string."]}),
+        ),
+        (
+            r#"{"title":{"secret":"sensitive-input"}}"#.to_owned(),
+            json!({"title": ["The title must be a string."]}),
+        ),
+        (
+            json!({"title": "é".repeat(201)}).to_string(),
+            json!({"title": ["The title must not be greater than 200 characters."]}),
+        ),
+        (
+            r#"{"title":"", "sensitive-input":"secret"}"#.to_owned(),
+            json!({"title": ["The title field is required."], "_root": ["Unknown fields are not allowed."]}),
+        ),
+        (
+            r#"{"title":"ok", "sensitive-input":"secret"}"#.to_owned(),
+            json!({"_root": ["Unknown fields are not allowed."]}),
+        ),
+        (
+            r#"{"title":"first","title":"second"}"#.to_owned(),
+            json!({"_root": ["Expected an object with no duplicate fields."]}),
+        ),
+        (
+            "[]".to_owned(),
+            json!({"_root": ["Expected an object with no duplicate fields."]}),
+        ),
+        (
+            "null".to_owned(),
+            json!({"_root": ["Expected an object with no duplicate fields."]}),
+        ),
+    ] {
+        let (status, _, problem) =
+            request(&router, "POST", "/example/notes", &body, "application/json").await;
+        assert_eq!(status, 422, "body: {body}");
+        assert_eq!(problem["detail"], "The given data was invalid.");
+        assert_eq!(problem["errors"], expected_errors, "body: {body}");
+        assert!(!problem.to_string().contains("sensitive-input"));
+    }
+    use sea_orm::PaginatorTrait;
+    assert_eq!(
+        rust_starterkit::notes::entity::Entity::find()
+            .count(&fixture.db)
+            .await
+            .unwrap(),
+        2
+    );
     for (body, content_type, expected) in [
         (r#"{"title":" "}"#, "application/json", 422),
         ("{", "application/json", 400),
@@ -256,6 +328,11 @@ async fn postgres_http_contract_and_migration_lifecycle() {
         404
     );
     let spec: Value = serde_json::from_str(include_str!("../docs/openapi.json")).unwrap();
+    assert_eq!(
+        spec["components"]["schemas"]["Problem"]["properties"]["errors"]["additionalProperties"]["items"]
+            ["type"],
+        "string"
+    );
     assert_eq!(
         spec["paths"]["/example/notes"]["post"]["responses"]["201"]["content"]["application/json"]
             ["schema"]["$ref"],

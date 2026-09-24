@@ -44,7 +44,7 @@ async fn ready(State(state): State<AppState>) -> Result<Json<Health>, AppError> 
     )
     .await
     .map_err(|_| {
-        AppError(
+        AppError::new(
             StatusCode::SERVICE_UNAVAILABLE,
             "Database readiness deadline exceeded",
         )
@@ -76,9 +76,9 @@ pub fn app(state: AppState, config: &config::Config) -> Router {
             .route("/example/notes/{id}", get(notes::get));
     }
     router
-        .fallback(|| async { AppError(StatusCode::NOT_FOUND, "Route not found") })
+        .fallback(|| async { AppError::new(StatusCode::NOT_FOUND, "Route not found") })
         .method_not_allowed_fallback(|| async {
-            AppError(StatusCode::METHOD_NOT_ALLOWED, "Method not allowed")
+            AppError::new(StatusCode::METHOD_NOT_ALLOWED, "Method not allowed")
         })
         .layer(DefaultBodyLimit::max(config.body_limit))
         .layer(middleware::from_fn_with_state(
@@ -106,9 +106,8 @@ async fn request_context(
         let started = Instant::now();
         let response = match tokio::time::timeout(timeout, next.run(request)).await {
             Ok(response) => response,
-            Err(_) => {
-                AppError(StatusCode::REQUEST_TIMEOUT, "Request deadline exceeded").into_response()
-            }
+            Err(_) => AppError::new(StatusCode::REQUEST_TIMEOUT, "Request deadline exceeded")
+                .into_response(),
         };
         let mut response = error::normalize(response, &request_id);
         response.headers_mut().insert(
@@ -146,7 +145,7 @@ mod tests {
                             ("access-control-allow-origin", "https://client.example"),
                             ("set-cookie", "session=; Max-Age=0"),
                         ],
-                        AppError(StatusCode::TOO_MANY_REQUESTS, "Try later"),
+                        AppError::new(StatusCode::TOO_MANY_REQUESTS, "Try later"),
                     )
                 }),
             )
