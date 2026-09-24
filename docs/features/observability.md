@@ -4,6 +4,8 @@
 
 The core's JSON request logs and probes are enough to diagnose a small local service. Add metrics for trends/alerts and traces when requests cross service boundaries. Recommend OpenTelemetry OTLP to a collector, keeping the existing tracing spans and JSON logs. The collector owns vendor export and buffering; the application does not require vendor credentials for normal tests.
 
+For authoritative records of sensitive business actions, follow the [identity recipe's durable audit guidance](identity.md#durable-audit-history-when-required). An exporter that can drop telemetry does not satisfy the transaction and retention requirements of an audit history.
+
 Checked 2026-09-25: [opentelemetry 0.33.0](https://docs.rs/opentelemetry/0.33.0/opentelemetry/), [opentelemetry_sdk 0.33](https://docs.rs/opentelemetry_sdk/0.33.0/opentelemetry_sdk/), [opentelemetry-otlp 0.33.0](https://docs.rs/opentelemetry-otlp/0.33.0/opentelemetry_otlp/), [tracing-opentelemetry 0.34.0](https://docs.rs/tracing-opentelemetry/0.34.0/tracing_opentelemetry/) (its dependency explicitly targets OpenTelemetry 0.33). Use this matched set, not equal version numbers across every crate. **Documentation-only; collector export and SDK integration not compiled or executed.**
 
 ## Prerequisites and edits

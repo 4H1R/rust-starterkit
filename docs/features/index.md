@@ -5,11 +5,12 @@ Read the relevant recipe before adding dependencies. **Implemented** means prese
 | Capability | Status / verification | Recommended approach | Prerequisites / recipe |
 | --- | --- | --- | --- |
 | HTTP, validation, JSON errors, OpenAPI | Implemented; runtime/contract tests | Axum, utoipa, problem details | [HTTP](../http.md) |
-| PostgreSQL pool, versioned migrations, transactions | Implemented pool/migrations; transaction guidance | SeaORM concrete feature logic | [Database](../database.md), [data](data.md) |
+| PostgreSQL pool, versioned migrations, transactions | Implemented; pool/migrations/transaction composition tested | SeaORM concrete feature logic | [Database](../database.md), [data](data.md) |
 | Logs, request IDs, health, readiness, shutdown, limits | Implemented; core and container checks | JSON tracing, explicit deadlines | [HTTP](../http.md), [operations](../operations.md) |
 | Authentication, sessions/tokens, authorization | Recipe; documentation only | OIDC code + PKCE and PostgreSQL sessions for browser apps | Client model/issuer decision; [identity](identity.md) |
 | Password reset, email verification | Recipe; documentation only | Identity provider's verified flows | Identity provider; [identity](identity.md) |
 | Tenant isolation | Recipe; documentation only | Memberships and tenant-scoped queries | Identity + tenant model; [identity](identity.md) |
+| Durable audit history | Recipe; documentation only | Commit success audit and mutation together; separately capture denials | Identity + retention policy; [identity](identity.md#durable-audit-history-when-required) |
 | Durable jobs, retries, failed-job inspection/replay | Recipe; documentation only | PostgreSQL lease queue + separate worker | Delivery semantics; [jobs](jobs.md) |
 | Events, outbox, webhooks | Recipe; documentation only | Atomic intent + at-least-once delivery | Jobs + signing/recipient policy; [jobs](jobs.md) |
 | Scheduling | Recipe; documentation only | UTC schedules enqueue deduplicated jobs | Durable jobs; [scheduling](scheduling.md) |

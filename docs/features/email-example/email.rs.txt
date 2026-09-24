@@ -10,7 +10,6 @@ pub fn render(title: &str) -> Result<String, &'static str> {
     NoteTemplate { title }.render().map_err(|_| "template rendering failed")
 }
 
-// The trial has no production transport. Plaintext is restricted to loopback.
 pub fn local_mailer(port: u16) -> AsyncSmtpTransport<Tokio1Executor> {
     AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous("127.0.0.1")
         .port(port).timeout(Some(Duration::from_secs(5))).build()

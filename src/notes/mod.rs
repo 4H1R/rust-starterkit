@@ -8,7 +8,7 @@ use axum::{
     },
     http::StatusCode,
 };
-use sea_orm::{ActiveModelTrait, EntityTrait, Set};
+use sea_orm::{ActiveModelTrait, ConnectionTrait, EntityTrait, Set};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -36,10 +36,7 @@ pub fn validate_title(title: &str) -> Result<String, AppError> {
     Ok(title.into())
 }
 
-pub async fn create_note(
-    db: &sea_orm::DatabaseConnection,
-    input: CreateNote,
-) -> Result<Note, AppError> {
+pub async fn create_note(db: &impl ConnectionTrait, input: CreateNote) -> Result<Note, AppError> {
     let title = validate_title(&input.title)?;
     let model = entity::ActiveModel {
         id: Set(Uuid::new_v4()),

@@ -306,3 +306,70 @@ async fn deadline_and_unavailable_database() {
     );
     fixture.cleanup().await;
 }
+
+#[tokio::test]
+async fn note_creation_participates_in_the_callers_transaction() {
+    use rust_starterkit::notes::{CreateNote, create_note, entity};
+    use sea_orm::{ActiveModelTrait, EntityTrait, Set, TransactionTrait};
+
+    let fixture = TestDb::new().await;
+    Migrator::up(&fixture.db, None).await.unwrap();
+
+    let transaction = fixture.db.begin().await.unwrap();
+    let committed = create_note(
+        &transaction,
+        CreateNote {
+            title: "committed".into(),
+        },
+    )
+    .await
+    .unwrap_or_else(|_| panic!("create note in transaction"));
+    assert!(
+        entity::Entity::find_by_id(committed.id)
+            .one(&fixture.db)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    transaction.commit().await.unwrap();
+    assert_eq!(
+        entity::Entity::find_by_id(committed.id)
+            .one(&fixture.db)
+            .await
+            .unwrap()
+            .unwrap()
+            .title,
+        committed.title
+    );
+
+    let transaction = fixture.db.begin().await.unwrap();
+    let rolled_back = create_note(
+        &transaction,
+        CreateNote {
+            title: "rolled back".into(),
+        },
+    )
+    .await
+    .unwrap_or_else(|_| panic!("create note in transaction"));
+    let duplicate = entity::ActiveModel {
+        id: Set(rolled_back.id),
+        title: Set("conflicting second write".into()),
+    };
+    assert!(duplicate.insert(&transaction).await.is_err());
+    transaction.rollback().await.unwrap();
+    assert!(
+        entity::Entity::find_by_id(rolled_back.id)
+            .one(&fixture.db)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        entity::Entity::find_by_id(committed.id)
+            .one(&fixture.db)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    fixture.cleanup().await;
+}

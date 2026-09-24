@@ -12,7 +12,7 @@ The following commands were executed from the repository with `CARGO_TARGET_DIR=
 | `cargo check --all-targets` | Passed during initial implementation |
 | `cargo fmt --all -- --check` | Passed via shared check script |
 | `cargo clippy --locked --all-targets -- -D warnings` | Passed |
-| `cargo test --locked --all-targets` | Passed: 2 unit tests + 2 HTTP/PostgreSQL scenario tests; no ignored tests |
+| `cargo test --locked --all-targets` | Passed: 3 unit tests + 3 HTTP/PostgreSQL scenario tests; no ignored tests |
 | `bash scripts/openapi.sh write` then `bash scripts/openapi.sh check` | Generated checked-in spec; drift check passed |
 | `cargo deny --locked check` | Advisories, bans, licenses, sources passed; transitive duplicate-version warnings remain intentionally visible |
 | `cargo build --locked --release --bin rust-starterkit` | Passed |
@@ -32,6 +32,10 @@ Passed in the copy: Clippy for all trial targets, both email tests (HTML escapin
 The email recipe records the additional template Docker context/copy steps needed on adoption. Authentication, jobs, scheduling, uploads, caching, metrics, realtime, backup/restore and provider integrations remain documentation-only guidance; they were not compiled or executed merely because email succeeded.
 
 ## Corrections and remaining limits
+
+Zoora-informed extension on 2026-09-25: a read-only sub-agent comparison identified transaction composition, durable audit semantics and negative authorization/serialization tests; [the comparison record](zoora-review.md) contains source evidence and scope. `notes::create_note` now accepts SeaORM's `ConnectionTrait`. A new real-PostgreSQL test verified uncommitted isolation, commit visibility, and rollback after a conflicting second write. The full `scripts/check.sh` and `scripts/container-smoke.sh` passed again. All 20 local Markdown documents' file links resolved. Audit and authorization changes are recipe guidance only; Zoora's tests were not run and its files were not changed.
+
+Refactor verification on 2026-09-25: repeated `scripts/check.sh` and `scripts/container-smoke.sh` successfully after replacing error-body JSON reparsing with typed `AppError` response metadata and one problem-details renderer. Added a routed regression test for header preservation (including CORS/cookies), safe fallback details, stale body-header removal, correlation IDs and unchanged success responses. OpenAPI output remained identical. Also executed the OpenAPI write path with a fake generator that emitted partial output and exited 42: the command failed and the original specification hash remained unchanged. Redundant comments were removed; dependencies and migrations were unchanged.
 
 The first cargo-deny run rejected the Mozilla root certificate data license. The policy now explicitly allows `CDLA-Permissive-2.0` and passes. One base-image download ended with unexpected EOF; a retry succeeded. Initial tests used PostgreSQL 18.3, then the final image was updated to 18.6 and the full checks were repeated. These failures are resolved, not skipped checks.
 

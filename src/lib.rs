@@ -6,7 +6,6 @@ pub mod notes;
 
 use axum::{
     Json, Router,
-    body::Body,
     extract::{DefaultBodyLimit, MatchedPath, Request, State},
     http::{HeaderValue, StatusCode},
     middleware::{self, Next},
@@ -105,40 +104,13 @@ async fn request_context(
     let span = tracing::info_span!("http_request", request_id = %request_id, route = %route);
     async {
         let started = Instant::now();
-        let mut response = match tokio::time::timeout(timeout, next.run(request)).await {
+        let response = match tokio::time::timeout(timeout, next.run(request)).await {
             Ok(response) => response,
-            Err(_) => AppError(StatusCode::REQUEST_TIMEOUT, "Request deadline exceeded")
-                .response(&request_id),
-        };
-        // Stamp every application error consistently, including framework fallbacks/rejections.
-        if response.status().is_client_error() || response.status().is_server_error() {
-            let status = response.status();
-            let headers = response.headers().clone();
-            let body = std::mem::replace(response.body_mut(), Body::empty());
-            let detail = match axum::body::to_bytes(body, 4096).await {
-                Ok(bytes) => serde_json::from_slice::<serde_json::Value>(&bytes)
-                    .ok()
-                    .and_then(|v| v["detail"].as_str().map(str::to_owned)),
-                Err(_) => None,
-            };
-            let problem = error::Problem {
-                kind: "about:blank".into(),
-                title: status.canonical_reason().unwrap_or("Error").into(),
-                status: status.as_u16(),
-                detail: detail.unwrap_or_else(|| "Request failed".into()),
-                request_id: request_id.clone(),
-            };
-            response = (status, Json(problem)).into_response();
-            for name in ["allow", "retry-after", "www-authenticate"] {
-                if let Some(value) = headers.get(name) {
-                    response.headers_mut().insert(name, value.clone());
-                }
+            Err(_) => {
+                AppError(StatusCode::REQUEST_TIMEOUT, "Request deadline exceeded").into_response()
             }
-            response.headers_mut().insert(
-                "content-type",
-                HeaderValue::from_static("application/problem+json"),
-            );
-        }
+        };
+        let mut response = error::normalize(response, &request_id);
         response.headers_mut().insert(
             "x-request-id",
             HeaderValue::from_str(&request_id).expect("UUID is a valid header"),
@@ -152,4 +124,103 @@ async fn request_context(
     }
     .instrument(span)
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::{Body, to_bytes};
+    use serde_json::{Value, json};
+    use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn errors_preserve_headers_and_only_expose_explicit_public_details() {
+        let router = Router::new()
+            .route(
+                "/known",
+                get(|| async {
+                    (
+                        [
+                            ("retry-after", "30"),
+                            ("www-authenticate", "Bearer"),
+                            ("access-control-allow-origin", "https://client.example"),
+                            ("set-cookie", "session=; Max-Age=0"),
+                        ],
+                        AppError(StatusCode::TOO_MANY_REQUESTS, "Try later"),
+                    )
+                }),
+            )
+            .route(
+                "/unknown",
+                get(|| async {
+                    (
+                        StatusCode::BAD_GATEWAY,
+                        [
+                            ("content-length", "999"),
+                            ("content-encoding", "gzip"),
+                            ("etag", "old-body"),
+                        ],
+                        Json(json!({"detail": "provider-secret"})),
+                    )
+                }),
+            )
+            .route("/success", get(|| async { "unchanged" }))
+            .layer(middleware::from_fn_with_state(
+                Duration::from_secs(1),
+                request_context,
+            ));
+
+        for (path, expected_status, expected_detail) in [
+            ("/known", StatusCode::TOO_MANY_REQUESTS, "Try later"),
+            ("/unknown", StatusCode::BAD_GATEWAY, "Request failed"),
+        ] {
+            let response = router
+                .clone()
+                .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), expected_status);
+            let headers = response.headers().clone();
+            assert_eq!(headers["content-type"], "application/problem+json");
+            assert!(!headers.contains_key("content-encoding"));
+            assert!(!headers.contains_key("etag"));
+            let bytes = to_bytes(response.into_body(), 4096).await.unwrap();
+            if let Some(length) = headers.get("content-length") {
+                assert_eq!(
+                    length.to_str().unwrap().parse::<usize>().unwrap(),
+                    bytes.len()
+                );
+            }
+            let problem: Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(problem["detail"], expected_detail);
+            assert_eq!(
+                problem["request_id"],
+                headers["x-request-id"].to_str().unwrap()
+            );
+            assert!(!problem.to_string().contains("provider-secret"));
+            if path == "/known" {
+                assert_eq!(headers["retry-after"], "30");
+                assert_eq!(headers["www-authenticate"], "Bearer");
+                assert_eq!(
+                    headers["access-control-allow-origin"],
+                    "https://client.example"
+                );
+                assert_eq!(headers["set-cookie"], "session=; Max-Age=0");
+            }
+        }
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .uri("/success")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            to_bytes(response.into_body(), 4096).await.unwrap(),
+            "unchanged"
+        );
+    }
 }
