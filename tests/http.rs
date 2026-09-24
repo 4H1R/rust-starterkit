@@ -33,7 +33,8 @@ async fn request(
     let headers = response.headers().clone();
     let bytes = to_bytes(response.into_body(), 65536).await.unwrap();
     let value: Value = serde_json::from_slice(&bytes).unwrap();
-    uuid::Uuid::parse_str(headers["x-request-id"].to_str().unwrap()).unwrap();
+    let request_id = uuid::Uuid::parse_str(headers["x-request-id"].to_str().unwrap()).unwrap();
+    assert_eq!(request_id.get_version_num(), 7);
     if status.is_client_error() || status.is_server_error() {
         assert_eq!(headers["content-type"], "application/problem+json");
         assert_eq!(value["status"], status.as_u16());
@@ -64,7 +65,7 @@ impl TestDb {
         })
         .unwrap();
         let admin = db::connect(&config).await.unwrap();
-        let schema = format!("test_{}", uuid::Uuid::new_v4().simple());
+        let schema = format!("test_{}", uuid::Uuid::now_v7().simple());
         admin
             .execute_unprepared(&format!("CREATE SCHEMA {schema}"))
             .await
@@ -131,7 +132,8 @@ async fn postgres_http_contract_and_migration_lifecycle() {
     .await;
     assert_eq!(status, 201);
     assert_eq!(note["title"], "hello");
-    uuid::Uuid::parse_str(note["id"].as_str().unwrap()).unwrap();
+    let note_id = uuid::Uuid::parse_str(note["id"].as_str().unwrap()).unwrap();
+    assert_eq!(note_id.get_version_num(), 7);
     let path = format!("/example/notes/{}", note["id"].as_str().unwrap());
     assert_eq!(
         request(&router, "GET", &path, "", "application/json")
@@ -148,6 +150,26 @@ async fn postgres_http_contract_and_migration_lifecycle() {
     .unwrap()
     .unwrap();
     assert_eq!(persisted.title, "hello");
+    let legacy_id = uuid::Uuid::parse_str("95a73fe1-616e-4de6-b21e-74f8d9dfe638").unwrap();
+    use sea_orm::{ActiveModelTrait, Set};
+    rust_starterkit::notes::entity::ActiveModel {
+        id: Set(legacy_id),
+        title: Set("existing v4 note".into()),
+    }
+    .insert(&fixture.db)
+    .await
+    .unwrap();
+    let (status, _, legacy_note) = request(
+        &router,
+        "GET",
+        &format!("/example/notes/{legacy_id}"),
+        "",
+        "application/json",
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(legacy_note["id"], legacy_id.to_string());
+    assert_eq!(legacy_note["title"], "existing v4 note");
     for (body, content_type, expected) in [
         (r#"{"title":" "}"#, "application/json", 422),
         ("{", "application/json", 400),
@@ -190,7 +212,7 @@ async fn postgres_http_contract_and_migration_lifecycle() {
         request(
             &router,
             "GET",
-            &format!("/example/notes/{}", uuid::Uuid::new_v4()),
+            &format!("/example/notes/{}", uuid::Uuid::now_v7()),
             "",
             "application/json"
         )

@@ -39,7 +39,7 @@ pub fn validate_title(title: &str) -> Result<String, AppError> {
 pub async fn create_note(db: &impl ConnectionTrait, input: CreateNote) -> Result<Note, AppError> {
     let title = validate_title(&input.title)?;
     let model = entity::ActiveModel {
-        id: Set(Uuid::new_v4()),
+        id: Set(Uuid::now_v7()),
         title: Set(title),
     }
     .insert(db)

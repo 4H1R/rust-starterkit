@@ -93,7 +93,7 @@ async fn request_context(
     request: Request,
     next: Next,
 ) -> Response {
-    let request_id = uuid::Uuid::new_v4().to_string();
+    let request_id = uuid::Uuid::now_v7().to_string();
     let route = request
         .extensions()
         .get::<MatchedPath>()
