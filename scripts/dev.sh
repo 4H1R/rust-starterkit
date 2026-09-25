@@ -5,9 +5,11 @@ docker_bin=${DOCKER_BIN:-docker}
 case "${1:-help}" in
   up) "$docker_bin" compose up -d --wait ;;
   down) "$docker_bin" compose down ;;
-  migrate|run)
+  migrate|run|doctor|inspect)
     if [[ -f .env ]]; then set -a; source .env; set +a; fi
-    if [[ "$1" == migrate ]]; then cargo run --locked --bin rust-starterkit -- migrate
-    else cargo run --locked --bin rust-starterkit -- serve; fi ;;
-  *) echo 'Usage: bash scripts/dev.sh {up|down|migrate|run}'; exit 2 ;;
+    command=$1
+    shift
+    if [[ "$command" == run ]]; then command=serve; fi
+    cargo run --quiet --locked --bin rust-starterkit -- "$command" "$@" ;;
+  *) echo 'Usage: bash scripts/dev.sh {up|down|migrate|run|doctor|inspect} [options]'; exit 2 ;;
 esac

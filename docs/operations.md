@@ -8,6 +8,8 @@ Start with a 30-second termination grace period (20 in the smoke test with the d
 
 ## Migration recovery
 
+Use `rust-starterkit inspect --database --json` to view applied/pending history without changing it, or `doctor --deploy --database --json` to fail on pending migrations and enabled teaching routes. These commands use the supplied process environment and do not check external deployment infrastructure. See [developer tooling](features/tooling.md).
+
 Before releasing a schema change, test it from an empty database and from a fixture matching the previous release. Prefer expand/backfill/contract: add compatible columns/indexes, ship code accepting both states, backfill in bounded batches, then remove old storage in a later release. Set a deployment statement/lock timeout so a migration cannot wait indefinitely; inspect locks and retry deliberately. The serving request deadline does not bound the migration command. Serialize migration jobs in the deploy platform.
 
 If migration fails, stop the rollout, inspect `seaql_migrations` and the actual schema using an administrator, and determine whether the failed step committed. Single SQL statements are atomic; a custom multi-step migration may need repair. Restore from a validated backup or apply a reviewed forward repair. Do not blindly delete migration-history rows or run `down` to make startup pass. Roll back application code only if it remains compatible with the current schema. The initial example's down migration deletes notes and is for test lifecycle coverage.

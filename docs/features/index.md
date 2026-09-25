@@ -4,6 +4,7 @@ Read the relevant recipe before adding dependencies. **Implemented** means prese
 
 | Capability | Status / verification | Recommended approach | Prerequisites / recipe |
 | --- | --- | --- | --- |
+| Developer diagnostics and AI-readable inspection | Implemented; CLI + PostgreSQL 16.15 checks passed; PostgreSQL 18/container rerun blocked | `doctor`, `inspect --json`, opt-in read-only migration checks | [Developer tooling](tooling.md) |
 | HTTP, validation, JSON errors, OpenAPI | Implemented; issue aggregation, typed paths and runtime/contract tests | Axum, utoipa, problem details with Zod-style issues | [HTTP](../http.md) |
 | PostgreSQL pool, versioned migrations, transactions | Implemented; pool/migrations/transaction composition tested | SeaORM concrete feature logic | [Database](../database.md), [data](data.md) |
 | Logs, request IDs, health, readiness, shutdown, limits | Implemented; core and container checks | JSON tracing, explicit deadlines | [HTTP](../http.md), [operations](../operations.md) |

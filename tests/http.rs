@@ -51,6 +51,100 @@ async fn request(
     (status, headers, value)
 }
 
+#[tokio::test]
+async fn diagnostics_inspect_history_without_mutating_and_handle_failures() {
+    use rust_starterkit::tooling::{diagnose, migration_status, offline};
+    use sea_orm::TransactionTrait;
+    let fixture = TestDb::new().await;
+    let mut config = fixture.config.clone();
+    let mut url = url::Url::parse(&config.database_url).unwrap();
+    url.query_pairs_mut()
+        .append_pair("options", &format!("-csearch_path={}", fixture.schema));
+    config.database_url = url.into();
+
+    let status = migration_status(&fixture.db).await.unwrap();
+    assert_eq!(status.len(), 1);
+    assert_eq!(status[0].status, "pending");
+    let tables = fixture.db.query_one_raw(sea_orm::Statement::from_string(
+        sea_orm::DbBackend::Postgres,
+        "SELECT count(*)::bigint AS count FROM information_schema.tables WHERE table_schema = current_schema()"
+    )).await.unwrap().unwrap();
+    assert_eq!(
+        tables.try_get::<i64>("", "count").unwrap(),
+        0,
+        "inspection must not create migration history"
+    );
+    let pending = diagnose(Ok(config.clone()), false, false, true).await;
+    assert!(!pending.ok);
+    assert_eq!(pending.database_status, "checked");
+    assert!(
+        pending
+            .checks
+            .iter()
+            .any(|check| check.code == "DATABASE.PENDING_MIGRATIONS")
+    );
+    assert!(diagnose(Ok(config.clone()), true, false, true).await.ok);
+
+    Migrator::up(&fixture.db, None).await.unwrap();
+    let current = diagnose(Ok(config.clone()), false, false, true).await;
+    assert!(current.ok);
+    assert_eq!(current.migrations[0].status, "applied");
+    // Compare inventory to the actual router for both configuration modes.
+    for enabled in [false, true] {
+        config.enable_example = enabled;
+        let inventory = offline(Ok(&config), true, false).application.unwrap();
+        let router = app(
+            AppState {
+                db: fixture.db.clone(),
+            },
+            &config,
+        );
+        for route in inventory["routes"].as_array().unwrap() {
+            let template = route["path"].as_str().unwrap();
+            // Invalid UUID gives 400 only when the get route is registered.
+            let path = template.replace("{id}", "invalid");
+            let (status, _, _) = request(
+                &router,
+                route["method"].as_str().unwrap(),
+                &path,
+                "{}",
+                "application/json",
+            )
+            .await;
+            assert_eq!(
+                status != StatusCode::NOT_FOUND,
+                route["enabled"].as_bool().unwrap()
+            );
+        }
+    }
+    let transaction = fixture.db.begin().await.unwrap();
+    transaction
+        .execute_unprepared("LOCK TABLE seaql_migrations IN ACCESS EXCLUSIVE MODE")
+        .await
+        .unwrap();
+    let blocked = diagnose(Ok(config.clone()), true, false, true).await;
+    assert!(!blocked.ok);
+    assert!(
+        blocked
+            .checks
+            .iter()
+            .any(|check| check.code == "DATABASE.INSPECTION_FAILED")
+    );
+    transaction.rollback().await.unwrap();
+
+    fixture.db.execute_unprepared("INSERT INTO seaql_migrations (version, applied_at) VALUES ('secret-sentinel-unknown-migration', 0)").await.unwrap();
+    let incompatible = diagnose(Ok(config), true, false, true).await;
+    assert!(!incompatible.ok);
+    assert!(!incompatible.render(true).contains("secret-sentinel"));
+    assert!(
+        incompatible
+            .checks
+            .iter()
+            .any(|check| check.code == "DATABASE.INSPECTION_FAILED")
+    );
+    fixture.cleanup().await;
+}
+
 struct TestDb {
     admin: DatabaseConnection,
     db: DatabaseConnection,

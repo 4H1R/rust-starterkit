@@ -4,6 +4,33 @@ Date: 2026-09-25 (Asia/Dubai). Executed locally in WSL2 Ubuntu x86_64 with Docke
 
 ## Core commands and observed results
 
+### Developer tooling follow-up (2026-09-25)
+
+Added `doctor [--json] [--deploy] [--database]` and `inspect [--json] [--database]`, strict CLI parsing, selected locked package metadata, opt-in read-only migration history and documented JSON/exit contracts. No dependencies, schema changes or OpenAPI changes. Container and disposable email-copy builds now include `build.rs`; container smoke also invokes both diagnostic commands. The following evidence applies to this change and does not inherit the earlier container pass below.
+
+| Command actually executed | Result for this change |
+| --- | --- |
+| `cargo check --locked --all-targets` | Passed in WSL2 Ubuntu with Rust 1.98.1. |
+| `cargo fmt --all` and `cargo clippy --locked --all-targets -- -D warnings` | Passed. |
+| `cargo test --locked --lib --test cli` | Passed: 4 unit tests and 3 subprocess CLI tests. |
+| `bash scripts/dev.sh up` | Blocked: Docker Desktop Linux engine pipe unavailable. |
+| `bash scripts/dev.sh migrate` | Initial attempt failed because no `.env`/`DATABASE_URL` was supplied; the subsequent sequence with the explicit local URL stopped at Docker startup. No migration of the intended Docker database occurred. |
+| `bash scripts/check.sh` with the standard port-5432 `TEST_DATABASE_URL` | Failed: all four database scenarios could not connect. CLI/unit tests passed; the script stopped before later stages. |
+| `bash scripts/openapi.sh check` | Passed; contract unchanged. |
+| `cargo deny --locked check` | Passed advisories, bans, licenses and sources; existing duplicate-version warnings. |
+| `cargo build --locked --release --bin rust-starterkit` | Passed. |
+| `bash scripts/check.sh` with `TEST_DATABASE_URL=postgres://ghost@127.0.0.1:55439/postgres` | Passed in full on a disposable PostgreSQL **16.15** fallback: 4 unit + 3 CLI + 4 HTTP/database scenario tests, format, Clippy, OpenAPI drift, cargo-deny and release build. |
+| `bash scripts/container-smoke.sh` with the Windows Docker CLI via `DOCKER_BIN` | Blocked before build: Docker engine pipe unavailable. New container diagnostic assertions have not executed. |
+| `git diff --check` | Passed. |
+
+Fallback setup: discovered PostgreSQL client tools but no server; downloaded Ubuntu's `postgresql-16` package with `apt-get download`, extracted it into a generated `/tmp/starter-tooling-pg.*` directory using `dpkg-deb -x` (no system installation), initialized a UTF-8 disposable cluster, bound it to loopback port 55439 and stopped it after checks. An initial inline harness had shell quoting trouble and a subsequent attempt found the missing server before this extraction succeeded. Used `CARGO_TARGET_DIR=/tmp/rust-starterkit-target`. Temporary artifacts are outside tracked source.
+
+The new database scenario verifies that a fresh schema remains empty after inspection, pending history fails doctor but remains inspectable, applied history passes, both route inventories match the actual router, locks time out and unknown history fails without leaking its database-supplied sentinel. CLI tests verify one clean JSON document, exit codes, invalid arguments/config, example/deploy gating, offline behavior with an unreachable database and secret redaction.
+
+Docker Desktop startup failed on `sailor-ingest.sock` in its local runtime directory. A narrow removal attempt failed because Windows could not access that socket; no factory reset or Docker data deletion was performed. The supported PostgreSQL 18.6/container checks remain unverified for this change; the PostgreSQL 16 fallback does not expand the supported matrix. The optional email exercise was not rerun.
+
+### Earlier baseline
+
 The following commands were executed from the repository with `CARGO_TARGET_DIR=/tmp/rust-starterkit-target` and `TEST_DATABASE_URL=postgres://starter:starter@127.0.0.1:5432/starter`. This test database contains local-only credentials; tests isolate data in random schemas.
 
 | Command | Observed result |

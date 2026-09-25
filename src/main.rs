@@ -1,15 +1,42 @@
+use rust_starterkit::tooling::{self, Command};
 use rust_starterkit::{AppState, app, config::Config, db, migration::Migrator};
 use sea_orm_migration::MigratorTrait;
 use std::process::ExitCode;
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    let command = match Command::parse(std::env::args().skip(1)) {
+        Ok(command) => command,
+        Err(usage) => {
+            eprintln!("{usage}");
+            return ExitCode::from(2);
+        }
+    };
+    if command == Command::Help {
+        println!("{}", tooling::USAGE);
+        return ExitCode::SUCCESS;
+    }
+    if let Command::Diagnose {
+        inspect,
+        json,
+        deploy,
+        database,
+    } = command
+    {
+        let report = tooling::diagnose(Config::from_env(), inspect, deploy, database).await;
+        println!("{}", report.render(json));
+        return if report.ok {
+            ExitCode::SUCCESS
+        } else {
+            ExitCode::FAILURE
+        };
+    }
     tracing_subscriber::fmt()
         .json()
         .with_max_level(tracing::Level::INFO)
         .with_target(false)
         .init();
-    match run().await {
+    match run(command).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(message) => {
             tracing::error!(error = %message, "application stopped");
@@ -17,16 +44,12 @@ async fn main() -> ExitCode {
         }
     }
 }
-async fn run() -> Result<(), String> {
-    let command = std::env::args().nth(1).unwrap_or_else(|| "serve".into());
-    if !matches!(command.as_str(), "serve" | "migrate") {
-        return Err("usage: rust-starterkit [serve|migrate]".into());
-    }
+async fn run(command: Command) -> Result<(), String> {
     let config = Config::from_env()?;
     let database = db::connect(&config)
         .await
         .map_err(|_| "database connection failed")?;
-    if command == "migrate" {
+    if command == Command::Migrate {
         Migrator::up(&database, None)
             .await
             .map_err(|_| "migration failed; inspect migration status with an administrator")?;

@@ -30,6 +30,16 @@ curl http://127.0.0.1:3000/example/notes/REPLACE_WITH_ID
 
 ## Check your changes
 
+Inspect configuration and application structure without changing the database:
+
+```bash
+bash scripts/dev.sh doctor
+bash scripts/dev.sh inspect --json
+bash scripts/dev.sh doctor --json --database
+```
+
+Database checks are opt-in. `doctor --deploy --database` also rejects enabled teaching routes; run it with the intended deployment environment. [Developer tooling](docs/features/tooling.md) documents JSON output, exit codes and limits.
+
 ```bash
 cargo install cargo-deny --version 0.20.2 --locked
 export TEST_DATABASE_URL=postgres://starter:starter@127.0.0.1:5432/starter

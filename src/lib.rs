@@ -3,6 +3,7 @@ pub mod db;
 pub mod error;
 pub mod migration;
 pub mod notes;
+pub mod tooling;
 
 use axum::{
     Json, Router,

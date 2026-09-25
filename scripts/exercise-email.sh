@@ -4,7 +4,7 @@ cd "$(dirname "$0")/.."
 root=$PWD
 copy="$root/.scratch/email-$(date +%Y%m%d%H%M%S)-$$"
 mkdir -p "$copy"
-cp Cargo.toml Cargo.lock rust-toolchain.toml "$copy/"
+cp Cargo.toml Cargo.lock rust-toolchain.toml build.rs "$copy/"
 cp -R src "$copy/src"
 mkdir -p "$copy/templates" "$copy/tests"
 cp docs/features/email-example/email.rs.txt "$copy/src/email.rs"

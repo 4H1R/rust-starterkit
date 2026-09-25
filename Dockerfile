@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 FROM rust:1.98.1-bookworm AS build
 WORKDIR /app
-COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+COPY Cargo.toml Cargo.lock rust-toolchain.toml build.rs ./
 COPY src ./src
 RUN cargo build --locked --release --bin rust-starterkit
 

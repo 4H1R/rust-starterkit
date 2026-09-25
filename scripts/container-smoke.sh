@@ -19,6 +19,11 @@ done
 db="postgres://starter:starter@$name-db:5432/starter"
 "$d" run --rm --network "$name" -e DATABASE_URL="$db" rust-starterkit:smoke migrate
 "$d" run --rm --network "$name" -e DATABASE_URL="$db" rust-starterkit:smoke migrate
+inspection=$("$d" run --rm --network "$name" -e DATABASE_URL="$db" rust-starterkit:smoke inspect --json --database)
+[[ "$inspection" == *'"database_status": "checked"'* ]]
+[[ "$inspection" == *'"status": "applied"'* ]]
+[[ "$inspection" != *'starter:starter'* ]]
+"$d" run --rm --network "$name" -e DATABASE_URL="$db" rust-starterkit:smoke doctor --json --deploy --database
 "$d" run -d --name "$name-app" --network "$name" --read-only --cap-drop ALL --security-opt no-new-privileges -e DATABASE_URL="$db" rust-starterkit:smoke >/dev/null
 "$d" run --rm --network "$name" curlimages/curl:8.19.0 --fail --retry 20 --retry-connrefused --retry-delay 1 "http://$name-app:3000/readyz"
 code=$("$d" run --rm --network "$name" curlimages/curl:8.19.0 -s -o /dev/null -w '%{http_code}' "http://$name-app:3000/example/notes")
@@ -39,4 +44,4 @@ logs=$("$d" logs "$name-app" 2>&1)
 [[ "$logs" != *'starter:starter'* ]]
 "$d" stop --time 20 "$name-app" >/dev/null
 [[ $("$d" inspect --format '{{.State.ExitCode}}' "$name-app") == 0 ]]
-echo 'Container smoke passed: migrations, readiness, both example settings, persistence, log redaction, non-root/read-only runtime, SIGTERM.'
+echo 'Container smoke passed: migrations, diagnostics, inspection, readiness, both example settings, persistence, log redaction, non-root/read-only runtime, SIGTERM.'
